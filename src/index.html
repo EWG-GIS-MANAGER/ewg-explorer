@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EWG Community Explorer</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'DM Sans', sans-serif; }
+
+    /* --- GLOBAL THEME ENGINE --- */
+    :root {
+      --navy: #f4f7f9; --nm: #ffffff; --nl: #e9ecef;
+      --tx: #212529; --td: #495057; --ac: #007281;
+      --br: rgba(0, 0, 0, 0.1); --modal-bg: rgba(0,0,0,0.5);
+      --highlight: #ffd700;
+    }
+
+    [data-theme="dark"] {
+      --navy: #0a1628; --nm: #142238; --nl: #1c3050;
+      --tx: #e8edf4; --td: #8fa3be; --ac: #48b5c4;
+      --br: rgba(72, 181, 196, 0.15); --modal-bg: rgba(0,0,0,0.8);
+      --highlight: #f0c75e;
+    }
+
+    body { 
+      background-color: var(--navy); color: var(--tx); 
+      display: flex; flex-direction: column; height: 100vh;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    /* --- LAYOUT --- */
+    header {
+      background-color: var(--nm); padding: 10px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--br); z-index: 1000;
+    }
+
+    .header-controls { display: flex; align-items: center; gap: 15px; }
+    .icon-btn {
+      background: none; border: none; cursor: pointer; color: var(--tx);
+      padding: 6px; border-radius: 4px; display: flex; align-items: center;
+    }
+    .icon-btn:hover { background-color: var(--nl); }
+
+    main { display: flex; flex: 1; overflow: hidden; }
+
+    .side-panel {
+      width: 340px; background-color: var(--nm);
+      display: flex; flex-direction: column; overflow-y: auto;
+    }
+    #left-panel { border-right: 1px solid var(--br); }
+    #right-panel { border-left: 1px solid var(--br); }
+    
+    .panel-section { padding: 20px; border-bottom: 1px solid var(--br); }
+    .panel-header { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+    .panel-sub { font-size: 11px; color: var(--td); margin-bottom: 15px; }
+
+    select {
+      width: 100%; padding: 8px; border-radius: 4px; margin-bottom: 15px;
+      background: var(--navy); color: var(--tx); border: 1px solid var(--br);
+    }
+
+    #map-container { flex: 1; position: relative; }
+    #map { height: 100%; width: 100%; }
+
+    /* --- LEGEND & DASHBOARD STYLES --- */
+    .legend-row { display: flex; align-items: center; gap: 10px; font-size: 12px; margin-bottom: 4px; }
+    .legend-color { width: 20px; height: 20px; border: 1px solid var(--br); border-radius: 3px; }
+    
+    .stat-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--br); font-size: 13px; }
+    .stat-label { color: var(--td); }
+    .stat-val { font-weight: bold; }
+
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+    th { border-bottom: 1px solid var(--br); color: var(--td); font-size: 10px; text-transform: uppercase; padding: 8px 0; }
+    td { padding: 8px 0; border-bottom: 1px solid var(--br); }
+
+    /* --- MODAL --- */
+    #settings-modal {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: var(--modal-bg); z-index: 9999; align-items: center; justify-content: center;
+    }
+    .modal-content {
+      background: var(--nm); padding: 30px; border-radius: 8px;
+      width: 400px; max-width: 90%; border: 1px solid var(--br);
+    }
+    .modal-footer { margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; }
+    .btn { padding: 8px 16px; border-radius: 4px; border: none; cursor: pointer; }
+    .btn-primary { background: var(--ac); color: #fff; }
+    .btn-cancel { background: var(--nl); color: var(--tx); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <h2>EWG Community Explorer</h2>
+      <p style="font-size: 0.85em; color: var(--td);" id="citation-label">American Community Survey 5-Year Data</p>
+    </div>
+    <div class="header-controls">
+      <button class="icon-btn" id="btn-settings" title="Map Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
+      <button class="icon-btn" id="theme-toggle" title="Toggle Mode">
+        <svg id="theme-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <aside class="side-panel" id="left-panel">
+      <div class="panel-section">
+        <label style="font-size: 12px; font-weight: bold; color: var(--td);">Dataset Year</label>
+        <select id="year-select">
+          <option value="2024">2024</option><option value="2023">2023</option>
+          <option value="2022">2022</option><option value="2021">2021</option>
+        </select>
+        
+        <label style="font-size: 12px; font-weight: bold; color: var(--td);">Map Variable</label>
+        <select id="var-select"></select>
+
+        <div id="legend-container" style="margin-top: 15px;"></div>
+      </div>
+      
+      <div class="panel-section" style="flex: 1;">
+        <div class="panel-header">Tract Profile</div>
+        <div class="panel-sub">Select a tract on the map for a deep dive.</div>
+        <div id="tract-profile-content" style="color: var(--td); font-size: 13px;">
+          <i>No tract selected. Click a region on the map to load community demographics.</i>
+        </div>
+      </div>
+    </aside>
+    
+    <div id="map-container"><div id="map"></div></div>
+
+    <aside class="side-panel" id="right-panel">
+      <div class="panel-section" style="background: linear-gradient(135deg, var(--nm), var(--nl));">
+        <div class="panel-header">Regional Dashboard</div>
+        <div class="panel-sub">County breakdown for active map variable.</div>
+      </div>
+      <div class="panel-section" id="dashboard-content">
+        </div>
+    </aside>
+  </main>
+
+  <div id="settings-modal">
+    <div class="modal-content">
+      <h2 style="margin-bottom: 20px;">Map Settings</h2>
+      <div style="margin-bottom: 15px;">
+        <label>Color Palette Type</label>
+        <select id="palette-type">
+          <option value="sequential">Sequential (Carto Teal)</option>
+        </select>
+      </div>
+      <div style="margin-bottom: 15px;">
+        <label><input type="checkbox" id="show-boundaries" checked> Show Tract Boundaries</label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-cancel" id="btn-cancel">Close</button>
+        <button class="btn btn-primary" id="btn-apply">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. THEME ENGINE & MAP INITIALIZATION
+    // ==========================================
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    
+    const map = L.map('map').setView([38.6270, -90.1994], 9);
+    const lightBasemap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png');
+    const darkBasemap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
+
+    function setTheme(theme) {
+      if (theme === 'dark') {
+        document.body.setAttribute('data-theme', 'dark');
+        themeIcon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+        map.removeLayer(lightBasemap); darkBasemap.addTo(map);
+      } else {
+        document.body.removeAttribute('data-theme');
+        themeIcon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+        map.removeLayer(darkBasemap); lightBasemap.addTo(map);
+      }
+      localStorage.setItem('ewg-theme', theme);
+    }
+    setTheme(localStorage.getItem('ewg-theme') || 'light');
+    themeToggle.addEventListener('click', () => setTheme(document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+
+    // ==========================================
+    // 2. STATE & DATA INITIALIZATION
+    // ==========================================
+    let tractData, countyData, metadata;
+    let tractLayer, countyLayer, highlightedLayer;
+    let currentDataLookup = {};
+
+    const fipsToCounty = {
+      "29510": "St. Louis City", "29189": "St. Louis County", "29183": "St. Charles", 
+      "29099": "Jefferson", "29071": "Franklin", "17163": "St. Clair", 
+      "17119": "Madison", "17133": "Monroe"
+    };
+
+    // The Carto Teal Sequential Palette
+    const paletteColors = ['#cbf0f4', '#8bd4de', '#48b5c4', '#007281', '#005b67'];
+
+    async function loadInitialData() {
+      try {
+        const [tractRes, countyRes, metaRes] = await Promise.all([
+          fetch('Tracts_2020.geojson').then(r => r.json()),
+          fetch('Counties_2020.json').then(r => r.json()),
+          fetch('acs5_variable_catalog.json').then(r => r.json())
+        ]);
+        tractData = tractRes; countyData = countyRes; metadata = metaRes;
+        initializeLayers();
+      } catch (e) { console.error("Data load error:", e); }
+    }
+
+    function initializeLayers() {
+      const varSelect = document.getElementById('var-select');
+      metadata.attributes.forEach(attr => {
+        const opt = document.createElement('option');
+        opt.value = attr.title; opt.innerText = attr.displayTitle;
+        if(attr.title === "Total Population-Absolute") opt.selected = true;
+        varSelect.appendChild(opt);
+      });
+
+      countyLayer = L.geoJSON(countyData, { style: { color: '#000', weight: 1.5, fillOpacity: 0, interactive: false } }).addTo(map);
+      
+      tractLayer = L.geoJSON(tractData, {
+        style: { weight: 0.5, opacity: 1, color: 'var(--br)', fillColor: 'transparent' },
+        onEachFeature: (feature, layer) => {
+          layer.on('click', (e) => handleTractClick(e, feature.properties.GIS_Join));
+        }
+      }).addTo(map);
+
+      map.fitBounds(countyLayer.getBounds());
+      fetchAndRenderData(); 
+    }
+
+    // ==========================================
+    // 3. CORE AZURE FETCH
+    // ==========================================
+    async function fetchFromAzure(year, title) {
+      const meta = metadata.attributes.find(a => a.title === title);
+      let vars = meta.formula ? meta.formula.match(/[A-Z]\w+_\d{3}E/g) : [meta[`variable_${year}`]];
+      vars = [...new Set(vars)]; // Deduplicate
+      
+      const res = await fetch('/api/getCensusData', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ year: year, dataset: meta[`dataset_${year}`] || 'acs5', variables: vars, formula: meta.formula })
+      });
+      if (!res.ok) throw new Error("API failed");
+      return await res.json();
+    }
+
+    async function fetchAndRenderData() {
+      const year = document.getElementById('year-select').value;
+      const title = document.getElementById('var-select').value;
+      const showBoundaries = document.getElementById('show-boundaries').checked;
+      
+      const meta = metadata.attributes.find(a => a.title === title);
+      document.getElementById('citation-label').innerText = `ACS 5-Year Data (${year}) | ${meta[`table_${year}`] || 'Derived'}`;
+      document.body.style.cursor = 'wait';
+
+      try {
+          currentDataLookup = await fetchFromAzure(year, title);
+          colorTheMap(title, showBoundaries);
+          renderDashboard(title);
+      } catch (e) { alert("Failed to fetch data."); } 
+      finally { document.body.style.cursor = 'default'; }
+    }
+
+    // ==========================================
+    // 4. MAP COLORING & LEGEND
+    // ==========================================
+    function getBreaks(min, max) {
+      const step = (max - min) / 5;
+      return [min + step, min + step*2, min + step*3, min + step*4];
+    }
+
+    function colorTheMap(title, showBoundaries) {
+      let vals = Object.values(currentDataLookup).filter(v => v !== null && v !== undefined);
+      if(vals.length === 0) return;
+      
+      const min = Math.min(...vals); const max = Math.max(...vals);
+      const breaks = getBreaks(min, max);
+
+      tractLayer.eachLayer(layer => {
+        const val = currentDataLookup[layer.feature.properties.GIS_Join];
+        let color = 'transparent';
+        if (val !== null && val !== undefined) {
+          if (val <= breaks[0]) color = paletteColors[0];
+          else if (val <= breaks[1]) color = paletteColors[1];
+          else if (val <= breaks[2]) color = paletteColors[2];
+          else if (val <= breaks[3]) color = paletteColors[3];
+          else color = paletteColors[4];
+        }
+        
+        // Preserve highlight border if it's the clicked tract
+        const isHighlighted = highlightedLayer && highlightedLayer === layer;
+        layer.setStyle({
+          fillColor: color,
+          weight: isHighlighted ? 3 : (showBoundaries ? 0.5 : 0),
+          color: isHighlighted ? 'var(--highlight)' : 'var(--br)',
+          fillOpacity: 0.85
+        });
+
+        const fmtVal = val !== null && val !== undefined ? (Number.isInteger(val) ? val.toLocaleString() : val.toFixed(1)) : 'No Data';
+        layer.bindTooltip(`<b>${title}</b><br>${fmtVal}`);
+      });
+
+      renderLegend(min, max, breaks);
+    }
+
+    function renderLegend(min, max, breaks) {
+      const container = document.getElementById('legend-container');
+      const fmt = (n) => Number.isInteger(min) ? Math.round(n).toLocaleString() : n.toFixed(1);
+      
+      container.innerHTML = `
+        <div class="legend-row"><div class="legend-color" style="background:${paletteColors[4]}"></div> > ${fmt(breaks[3])}</div>
+        <div class="legend-row"><div class="legend-color" style="background:${paletteColors[3]}"></div> ${fmt(breaks[2])} &ndash; ${fmt(breaks[3])}</div>
+        <div class="legend-row"><div class="legend-color" style="background:${paletteColors[2]}"></div> ${fmt(breaks[1])} &ndash; ${fmt(breaks[2])}</div>
+        <div class="legend-row"><div class="legend-color" style="background:${paletteColors[1]}"></div> ${fmt(breaks[0])} &ndash; ${fmt(breaks[1])}</div>
+        <div class="legend-row"><div class="legend-color" style="background:${paletteColors[0]}"></div> < ${fmt(breaks[0])}</div>
+      `;
+    }
+
+    // ==========================================
+    // 5. REGIONAL DASHBOARD (Right Panel)
+    // ==========================================
+    function renderDashboard(title) {
+      const dash = document.getElementById('dashboard-content');
+      const stats = {};
+      Object.values(fipsToCounty).forEach(n => stats[n] = { sum: 0, count: 0, min: Infinity, max: -Infinity });
+
+      Object.entries(currentDataLookup).forEach(([geoid, val]) => {
+        if (val === null || val === undefined) return;
+        const cName = fipsToCounty[geoid.substring(4, 9)];
+        if (cName) {
+          stats[cName].sum += val; stats[cName].count += 1;
+          if (val < stats[cName].min) stats[cName].min = val;
+          if (val > stats[cName].max) stats[cName].max = val;
+        }
+      });
+
+      let html = `<div style="font-weight:bold; color:var(--tx); margin-bottom:10px;">${title}</div>
+                  <table><tr><th>County</th><th>Avg</th><th>Min</th><th>Max</th></tr>`;
+      
+      const isPct = title.includes('(%)');
+      const fmt = (n) => isPct ? n.toFixed(1) + '%' : Math.round(n).toLocaleString();
+
+      for (const [name, s] of Object.entries(stats)) {
+        if (s.count === 0) continue;
+        html += `<tr><td style="font-weight:bold; color:var(--tx);">${name}</td>
+                     <td>${fmt(s.sum/s.count)}</td><td>${fmt(s.min)}</td><td style="color:var(--tx); font-weight:bold;">${fmt(s.max)}</td></tr>`;
+      }
+      dash.innerHTML = html + `</table>`;
+    }
+
+    // ==========================================
+    // 6. DEEP DIVE: TRACT CLICK PROFILE
+    // ==========================================
+    async function handleTractClick(e, geoId) {
+      // Manage Map Highlight
+      if (highlightedLayer) {
+        tractLayer.resetStyle(highlightedLayer);
+      }
+      highlightedLayer = e.target;
+      highlightedLayer.setStyle({ weight: 3, color: 'var(--highlight)' });
+      highlightedLayer.bringToFront();
+
+      const profileDiv = document.getElementById('tract-profile-content');
+      profileDiv.innerHTML = `<div style="text-align:center; padding: 20px;"><div class="loader">Loading Profile...</div></div>`;
+
+      // The Deep Dive Metrics
+      const year = document.getElementById('year-select').value;
+      const metricsToFetch = [
+        "Total Population-Absolute",
+        "Median Household Income-Absolute",
+        "Minority Population-Percent",
+        "Poverty Population-Percent",
+        "Bachelor's Degree or Higher-Percent"
+      ];
+
+      try {
+        // Fetch all 5 metrics in parallel directly from Azure Serverless
+        const results = await Promise.all(metricsToFetch.map(m => fetchFromAzure(year, m)));
+        
+        const cName = fipsToCounty[geoId.substring(4, 9)] || "Unknown County";
+        let html = `<div style="margin-bottom: 15px;">
+                      <span style="font-weight:bold; color:var(--tx); font-size: 14px;">Tract ${geoId.slice(-6)}</span><br>
+                      <span>${cName}</span>
+                    </div>`;
+
+        metricsToFetch.forEach((metricName, index) => {
+          const val = results[index][geoId];
+          const isPct = metricName.includes('Percent');
+          const cleanName = metricName.split('-')[0];
+          const displayVal = val !== null && val !== undefined ? 
+              (isPct ? val.toFixed(1) + '%' : Math.round(val).toLocaleString()) : 'N/A';
+          
+          html += `<div class="stat-row">
+                     <span class="stat-label">${cleanName}</span>
+                     <span class="stat-val" style="color:var(--tx);">${displayVal}</span>
+                   </div>`;
+        });
+
+        profileDiv.innerHTML = html;
+      } catch (err) {
+        profileDiv.innerHTML = `<span style="color:red;">Error loading tract details.</span>`;
+      }
+    }
+
+    // ==========================================
+    // 7. EVENT LISTENERS
+    // ==========================================
+    const modal = document.getElementById('settings-modal');
+    document.getElementById('btn-settings').addEventListener('click', () => modal.style.display = 'flex');
+    document.getElementById('btn-cancel').addEventListener('click', () => modal.style.display = 'none');
+    document.getElementById('btn-apply').addEventListener('click', () => {
+      colorTheMap(document.getElementById('var-select').value, document.getElementById('show-boundaries').checked);
+      modal.style.display = 'none';
+    });
+
+    document.getElementById('year-select').addEventListener('change', fetchAndRenderData);
+    document.getElementById('var-select').addEventListener('change', fetchAndRenderData);
+    document.getElementById('show-boundaries').addEventListener('change', () => {
+      colorTheMap(document.getElementById('var-select').value, document.getElementById('show-boundaries').checked);
+    });
+
+    loadInitialData();
+  </script>
+</body>
+</html>
